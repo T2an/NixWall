@@ -50,6 +50,12 @@ let
 
   hasName = z: z ? name;
   hasMac = z: z ? mac;
+
+  gitRemotes = raw.git.remotes or { };
+  normalizedGitRemotes = lib.mapAttrs (_: r: {
+    inherit (r) url;
+    autoBackup = r.autoBackup or true;
+  }) gitRemotes;
 in
 {
   options.nixwall = {
@@ -117,6 +123,8 @@ in
         }) serverZones;
 
         nat.masquerade = lib.attrNames natZones;
+
+        git.remotes = normalizedGitRemotes;
       };
     };
   };
@@ -152,6 +160,18 @@ in
       {
         assertion = lib.length (lib.attrNames gwZones) <= 1;
         message = "nixwall: at most one zone may define `gateway`.";
+      }
+      {
+        assertion = lib.all (r: lib.isString (r.url or null) && r.url != "") (
+          lib.attrValues gitRemotes
+        );
+        message = "nixwall: each entry under [git.remotes] must set a non-empty string `url`.";
+      }
+      {
+        assertion = lib.all (r: !(r ? autoBackup) || lib.isBool r.autoBackup) (
+          lib.attrValues gitRemotes
+        );
+        message = "nixwall: [git.remotes.<name>].autoBackup must be a boolean.";
       }
     ];
   };

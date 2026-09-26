@@ -213,6 +213,7 @@
           "integration/firewall-rules" = integration ./tests/test-scripts/integration/firewall-rules.nix;
           "integration/dns-server" = integration ./tests/test-scripts/integration/dns-server.nix;
           "integration/api" = integration ./tests/test-scripts/integration/api.nix;
+          "integration/git-remotes" = integration ./tests/test-scripts/integration/git-remotes.nix;
         }
       );
     };

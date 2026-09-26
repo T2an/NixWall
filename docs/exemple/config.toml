@@ -106,6 +106,19 @@ cacheSize = 2000
 "machine.lan" = "10.10.10.2"
 "website.lan" = "10.100.100.100"
 
+# --- Git backup ---------------------------------------------------------------
+# Every applied config is committed to /etc/nixos automatically. Declared
+# remotes below get an automatic push too, right after a successful apply,
+# unless autoBackup = false.
+[git.remotes.backup]
+url = "/var/lib/nixwall-backup.git"
+
+# Remote (ssh/https) targets aren't supported yet: NixWall doesn't provision
+# the SSH key or HTTPS token they'd need. Shown here for reference only.
+# [git.remotes.offsite]
+# url = "ssh://backup@nas.example/srv/git/nixwall.git"
+# autoBackup = false
+
 [locale]
 timeZone = "Europe/Paris"
 consoleKeyMap = "en"

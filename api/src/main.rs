@@ -30,6 +30,7 @@ struct Config {
     sct_bin: String,
     jct_bin: String,
     config_path: String,
+    git_remotes_path: String,
     repo_dir: String,
     flake: String,
     host: String,
@@ -52,6 +53,7 @@ impl Config {
             sct_bin: e("NW_SYSTEMCTL_BIN", "systemctl"),
             jct_bin: e("NW_JOURNALCTL_BIN", "journalctl"),
             config_path: e("NW_CONFIG_PATH", "/etc/nixos/config.toml"),
+            git_remotes_path: e("NW_GIT_REMOTES_PATH", "/etc/nixwall/git-remotes.json"),
             repo_dir: e("NW_REPO_DIR", "/etc/nixos"),
             flake: e("NW_FLAKE", "/etc/nixos"),
             host: e("NW_API_HOST", "127.0.0.1"),
@@ -342,15 +344,86 @@ fn default_branch() -> String {
     "HEAD".into()
 }
 
+#[derive(Deserialize)]
+struct GitRemote {
+    url: String,
+    #[serde(rename = "autoBackup")]
+    auto_backup: bool,
+}
+
+// Remote (ssh/https) targets aren't validated for reachability or
+// authentication here — nothing in NixWall provisions SSH keys or
+// HTTPS credentials yet, so a non-local remote will likely fail (or
+// hang) when this pushes to it.
+//
+// This is pre-parsed, defaulted and validated by Nix from [git.remotes]
+// into `config.nixwall.internal.git.remotes`, then written out as JSON
+// at NW_GIT_REMOTES_PATH — the API never reads config.toml for this,
+// same as every other setting.
+fn read_git_remotes(cfg: &Config) -> std::collections::HashMap<String, GitRemote> {
+    std::fs::read_to_string(&cfg.git_remotes_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
 async fn git_push(State(cfg): State<AppState>, Json(body): Json<PushBody>) -> Response {
     if !Path::new(&cfg.repo_dir).join(".git").is_dir() {
         return api_error(StatusCode::BAD_REQUEST, "Not a git repository");
     }
+    let remotes = read_git_remotes(&cfg);
+    let Some(remote) = remotes.get(&body.remote) else {
+        return api_error(StatusCode::BAD_REQUEST, "Unknown remote");
+    };
     let out = run(
-        &[&cfg.git_bin, "push", &body.remote, &body.branch],
+        &[&cfg.git_bin, "push", "--", &remote.url, &body.branch],
         Some(&cfg.repo_dir),
     );
     Json(output_to_value(&out)).into_response()
+}
+
+fn git_snapshot(cfg: &Config) {
+    if !Path::new(&cfg.repo_dir).join(".git").is_dir() {
+        return;
+    }
+    let status = run(
+        &[&cfg.git_bin, "status", "--porcelain"],
+        Some(&cfg.repo_dir),
+    );
+    if !status.stdout.is_empty() {
+        let add = run(&[&cfg.git_bin, "add", "-A"], Some(&cfg.repo_dir));
+        if !add.status.success() {
+            eprintln!(
+                "git_snapshot: git add failed: {}",
+                String::from_utf8_lossy(&add.stderr)
+            );
+        }
+        let date = run(&["date", "-Iseconds"], None);
+        let message = format!("apply: {}", String::from_utf8_lossy(&date.stdout).trim());
+        let commit = run(
+            &[&cfg.git_bin, "commit", "-m", &message],
+            Some(&cfg.repo_dir),
+        );
+        if !commit.status.success() {
+            eprintln!(
+                "git_snapshot: git commit failed: {}",
+                String::from_utf8_lossy(&commit.stderr)
+            );
+        }
+    }
+    for remote in read_git_remotes(cfg).values().filter(|r| r.auto_backup) {
+        let push = run(
+            &[&cfg.git_bin, "push", "--", &remote.url, "main"],
+            Some(&cfg.repo_dir),
+        );
+        if !push.status.success() {
+            eprintln!(
+                "git_snapshot: push to {} failed: {}",
+                remote.url,
+                String::from_utf8_lossy(&push.stderr)
+            );
+        }
+    }
 }
 
 fn detect_attr(cfg: &Config, preferred: Option<&str>) -> String {
@@ -419,12 +492,19 @@ async fn apply_config(State(cfg): State<AppState>, Json(body): Json<ApplyBody>) 
         "After=network-online.target".into(),
         "--property".into(),
         "Wants=network-online.target".into(),
-        cfg.nxr_bin.clone(),
-        mode.clone(),
-        "--flake".into(),
-        flake_target,
-        "-L".into(),
     ];
+    if mode == "switch" {
+        let self_exe = std::env::current_exe()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| "nixwall-api".into());
+        cmd_owned.push(self_exe);
+        cmd_owned.push("--apply-and-snapshot".into());
+    }
+    cmd_owned.push(cfg.nxr_bin.clone());
+    cmd_owned.push(mode.clone());
+    cmd_owned.push("--flake".into());
+    cmd_owned.push(flake_target);
+    cmd_owned.push("-L".into());
     cmd_owned.extend(extra);
 
     let cmd_refs: Vec<&str> = cmd_owned.iter().map(|s| s.as_str()).collect();
@@ -554,6 +634,25 @@ fn build_router(cfg: AppState) -> Router {
 
 #[tokio::main]
 async fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--apply-and-snapshot") {
+        let Some(rebuild_bin) = args.get(2) else {
+            eprintln!("--apply-and-snapshot requires a command to run");
+            std::process::exit(1);
+        };
+        let cfg = Config::from_env();
+        let status = Command::new(rebuild_bin).args(&args[3..]).status();
+        let code = match status {
+            Ok(s) if s.success() => {
+                git_snapshot(&cfg);
+                0
+            }
+            Ok(s) => s.code().unwrap_or(1),
+            Err(_) => 1,
+        };
+        std::process::exit(code);
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

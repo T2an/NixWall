@@ -84,6 +84,7 @@ in
           }"
           "NW_REPO_DIR=/etc/nixos"
           "NW_FLAKE=/etc/nixos"
+          "NW_GIT_REMOTES_PATH=${config.nixwall.appliance.git.remotesPath}"
           "NW_API_TLS_CERT=${config.nixwall.appliance.tls.certFile}"
           "NW_API_TLS_KEY=${config.nixwall.appliance.tls.keyFile}"
           "NW_PAM_SERVICE=${config.nixwall.appliance.auth.pamService}"

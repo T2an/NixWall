@@ -1,7 +1,7 @@
 use std::{
     path::Path,
     process::{Command, Output},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use axum::{
@@ -33,6 +33,7 @@ struct Config {
     secrets_yaml_path: String,
     mkpasswd_bin: String,
     sops_bin: String,
+    secrets_yaml_lock: Arc<Mutex<()>>,
     repo_dir: String,
     flake: String,
     host: String,
@@ -58,6 +59,7 @@ impl Config {
             secrets_yaml_path: e("NW_SECRETS_YAML_PATH", "/etc/nixos/secrets.yaml"),
             mkpasswd_bin: e("NW_MKPASSWD_BIN", "mkpasswd"),
             sops_bin: e("NW_SOPS_BIN", "sops"),
+            secrets_yaml_lock: Arc::new(Mutex::new(())),
             repo_dir: e("NW_REPO_DIR", "/etc/nixos"),
             flake: e("NW_FLAKE", "/etc/nixos"),
             host: e("NW_API_HOST", "127.0.0.1"),
@@ -563,10 +565,16 @@ async fn change_password(
     let hash = String::from_utf8_lossy(&hash_out.stdout).trim().to_owned();
 
     let set_expr = format!("[\"{secret_key}\"] {}", json!(hash));
-    let sops_out = run(
-        &[&cfg.sops_bin, "--set", &set_expr, &cfg.secrets_yaml_path],
-        None,
-    );
+    let sops_out = {
+        let _guard = cfg
+            .secrets_yaml_lock
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        run(
+            &[&cfg.sops_bin, "--set", &set_expr, &cfg.secrets_yaml_path],
+            None,
+        )
+    };
     if !sops_out.status.success() {
         return api_error(
             StatusCode::INTERNAL_SERVER_ERROR,

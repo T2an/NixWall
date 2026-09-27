@@ -1,6 +1,23 @@
-{ pkgs, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 
 {
+  assertions = [
+    {
+      assertion = lib.all (
+        u:
+        !(u ? passwordHashFile)
+        ||
+          ((config.sops.secrets.${baseNameOf u.passwordHashFile} or { }).path or null) == u.passwordHashFile
+      ) (lib.attrValues (config.nixwall.internal.users or { }));
+      message = "nixwall: a user's passwordHashFile must match a sops.secrets.<name> whose name and path both agree with it (name = basename of the path) -- the API derives the sops key to update from that basename.";
+    }
+  ];
+
   sops = {
     defaultSopsFile = ./secrets.yaml;
     age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];

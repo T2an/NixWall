@@ -30,6 +30,9 @@ struct Config {
     sct_bin: String,
     jct_bin: String,
     config_path: String,
+    secrets_yaml_path: String,
+    mkpasswd_bin: String,
+    sops_bin: String,
     repo_dir: String,
     flake: String,
     host: String,
@@ -52,6 +55,9 @@ impl Config {
             sct_bin: e("NW_SYSTEMCTL_BIN", "systemctl"),
             jct_bin: e("NW_JOURNALCTL_BIN", "journalctl"),
             config_path: e("NW_CONFIG_PATH", "/etc/nixos/config.toml"),
+            secrets_yaml_path: e("NW_SECRETS_YAML_PATH", "/etc/nixos/secrets.yaml"),
+            mkpasswd_bin: e("NW_MKPASSWD_BIN", "mkpasswd"),
+            sops_bin: e("NW_SOPS_BIN", "sops"),
             repo_dir: e("NW_REPO_DIR", "/etc/nixos"),
             flake: e("NW_FLAKE", "/etc/nixos"),
             host: e("NW_API_HOST", "127.0.0.1"),
@@ -77,6 +83,32 @@ fn run(cmd: &[&str], cwd: Option<&str>) -> Output {
         builder.current_dir(dir);
     }
     builder.output().expect("failed to spawn process")
+}
+
+fn run_with_stdin(cmd: &[&str], input: &[u8]) -> std::io::Result<Output> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = Command::new(cmd[0])
+        .args(&cmd[1..])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn process");
+    let write_result = child
+        .stdin
+        .take()
+        .expect("child stdin was not piped")
+        .write_all(input);
+    match write_result {
+        Ok(()) => child.wait_with_output(),
+        Err(e) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(e)
+        }
+    }
 }
 
 fn output_to_value(out: &Output) -> Value {
@@ -401,12 +433,19 @@ async fn apply_config(State(cfg): State<AppState>, Json(body): Json<ApplyBody>) 
             "mode must be one of: switch, boot, test",
         );
     }
+    queue_apply(
+        &cfg,
+        mode,
+        body.attr.as_deref(),
+        body.extra_args.unwrap_or_default(),
+    )
+}
 
-    let target = detect_attr(&cfg, body.attr.as_deref());
+fn queue_apply(cfg: &Config, mode: &str, attr: Option<&str>, extra: Vec<String>) -> Response {
+    let target = detect_attr(cfg, attr);
     let job_id = Uuid::new_v4().simple().to_string()[..10].to_owned();
     let unit = format!("nixwall-apply-{job_id}.service");
     let flake_target = format!("{}#{}", cfg.flake, target);
-    let extra: Vec<String> = body.extra_args.unwrap_or_default();
 
     let mut cmd_owned: Vec<String> = vec![
         cfg.sdr_bin.clone(),
@@ -420,7 +459,7 @@ async fn apply_config(State(cfg): State<AppState>, Json(body): Json<ApplyBody>) 
         "--property".into(),
         "Wants=network-online.target".into(),
         cfg.nxr_bin.clone(),
-        mode.clone(),
+        mode.to_owned(),
         "--flake".into(),
         flake_target,
         "-L".into(),
@@ -452,6 +491,93 @@ async fn apply_config(State(cfg): State<AppState>, Json(body): Json<ApplyBody>) 
         })),
     )
         .into_response()
+}
+
+#[derive(Deserialize)]
+struct PasswordBody {
+    password: String,
+}
+
+fn provisioned_secret_key(cfg: &Config, name: &str) -> Option<String> {
+    let s = std::fs::read_to_string(&cfg.config_path).ok()?;
+    let v: Value = toml::from_str(&s).ok()?;
+    let path = v
+        .get("users")?
+        .get(name)?
+        .get("passwordHashFile")?
+        .as_str()?;
+    let key = Path::new(path).file_name()?.to_string_lossy().into_owned();
+    if key
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        Some(key)
+    } else {
+        None
+    }
+}
+
+async fn change_password(
+    State(cfg): State<AppState>,
+    AxumPath(name): AxumPath<String>,
+    Json(body): Json<PasswordBody>,
+) -> Response {
+    if body.password.is_empty() || body.password.contains('\n') {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "password must be non-empty and must not contain a newline",
+        );
+    }
+
+    let Some(secret_key) = provisioned_secret_key(&cfg, &name) else {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "{name} has no passwordHashFile in config.toml — not provisioned for password management"
+            ),
+        );
+    };
+
+    let stdin_input = format!("{}\n", body.password);
+    let hash_out = match run_with_stdin(
+        &[&cfg.mkpasswd_bin, "-m", "sha-512", "-s"],
+        stdin_input.as_bytes(),
+    ) {
+        Ok(out) => out,
+        Err(e) => {
+            return api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({"message": "failed to run mkpasswd", "error": e.to_string()}),
+            );
+        }
+    };
+    if !hash_out.status.success() {
+        return api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({
+                "message": "mkpasswd failed",
+                "stderr": String::from_utf8_lossy(&hash_out.stderr),
+            }),
+        );
+    }
+    let hash = String::from_utf8_lossy(&hash_out.stdout).trim().to_owned();
+
+    let set_expr = format!("[\"{secret_key}\"] {}", json!(hash));
+    let sops_out = run(
+        &[&cfg.sops_bin, "--set", &set_expr, &cfg.secrets_yaml_path],
+        None,
+    );
+    if !sops_out.status.success() {
+        return api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({
+                "message": "sops --set failed",
+                "stderr": String::from_utf8_lossy(&sops_out.stderr),
+            }),
+        );
+    }
+
+    queue_apply(&cfg, "switch", None, Vec::new())
 }
 
 fn unit_status(cfg: &Config, unit: &str) -> Option<Value> {
@@ -544,6 +670,7 @@ fn build_router(cfg: AppState) -> Router {
         .route("/config", put(put_config))
         .route("/git/commit", post(git_commit))
         .route("/git/push", post(git_push))
+        .route("/users/{name}/password", post(change_password))
         .route("/apply", post(apply_config))
         .route("/apply/{job_id}", get(apply_status))
         .route("/apply/{job_id}/logs", get(apply_logs))

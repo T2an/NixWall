@@ -2,6 +2,8 @@
 let
   inherit (pkgs) lib;
 
+  changemeHash = "$6$sezdiF6hDXEVeg20$ocbv.cLfPKO3IwF0PPXHtj11pQF7r26t2ftwo10aXBHsOKQqo35sD2lNukj6O/0xMWEqdnQp1FZKWcpubFImk.";
+
   base = {
     version = 1;
     hostname = "nixwall";
@@ -30,7 +32,7 @@ let
   demoUsers.users = {
     alice = {
       wheel = true;
-      initialPassword = "changeme";
+      passwordHash = changemeHash;
       ssh.authorizedKeys = [
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPzZm9OdiwdnERpkPbcL2cLo8BX0OL+JMdTHTeyfLV/G alice@test"
       ];
@@ -57,7 +59,7 @@ rec {
     api = mk [
       dhcpLAN
       demoUsers
-      { users.bob.initialPassword = "changeme"; }
+      { users.bob.passwordHash = changemeHash; }
       {
         firewall.rules = [
           {

@@ -13,6 +13,7 @@ let
       root.inputs = {
         nixpkgs = "nixpkgs";
         disko = "disko";
+        sops-nix = "sops-nix";
         nixwall = "nixwall";
       };
       nixwall = {

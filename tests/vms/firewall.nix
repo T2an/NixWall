@@ -5,4 +5,5 @@
     eth1.vlan = 2;
   };
   users.users.root.hashedPasswordFile = lib.mkForce null;
+  boot.loader.grub.devices = lib.mkForce [ "nodev" ];
 }

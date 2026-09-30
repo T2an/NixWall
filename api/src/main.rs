@@ -5,7 +5,7 @@ mod router;
 mod state;
 mod util;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tokio::sync::RwLock;
 use tracing::info;
@@ -32,6 +32,7 @@ async fn main() {
         cfg,
         ticket_secret,
         tokens,
+        secrets_yaml_lock: Arc::new(Mutex::new(())),
     });
 
     let addr = format!("{}:{}", ctx.cfg.host, ctx.cfg.port);

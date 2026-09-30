@@ -34,6 +34,7 @@ in
     self
     self.inputs.nixpkgs
     self.inputs.disko
+    self.inputs.sops-nix
     self.inputs.crane
     self.inputs.pre-commit-hooks
     self.inputs.pre-commit-hooks.inputs.flake-compat
@@ -58,6 +59,9 @@ in
 
   environment.systemPackages = [
     installerPkg
+    pkgs.age
+    pkgs.sops
+    pkgs.mkpasswd
   ];
 
   nix.settings.experimental-features = [

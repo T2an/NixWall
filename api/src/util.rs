@@ -17,6 +17,32 @@ pub fn run(cmd: &[&str], cwd: Option<&str>) -> Output {
     builder.output().expect("failed to spawn process")
 }
 
+pub fn run_with_stdin(cmd: &[&str], input: &[u8]) -> std::io::Result<Output> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = Command::new(cmd[0])
+        .args(&cmd[1..])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn process");
+    let write_result = child
+        .stdin
+        .take()
+        .expect("child stdin was not piped")
+        .write_all(input);
+    match write_result {
+        Ok(()) => child.wait_with_output(),
+        Err(e) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(e)
+        }
+    }
+}
+
 pub fn output_to_value(out: &Output) -> Value {
     json!({
         "rc": out.status.code().unwrap_or(-1),

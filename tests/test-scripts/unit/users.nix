@@ -3,6 +3,8 @@ let
   cfgs = import ../../configs { inherit pkgs; };
 
   carolHash = "$6$PxUZQx/q2lPmQf.0$/my0e2zwiiYsG0K2QXcmGyOZ.PlSVhmoKGI0HlHyZmbIK.geiZG7//o1hgqGLrN9hkVdta/GegvvPfAiClxN70";
+  aliceHash = "$6$xNPZw5qlUCLsl5OU$tLvFBufAFc7QKVq9lu/4/PGjSn7IkH2re1q5T3GVFgr0l1Alq/QQuiVCzMUY6KEanqdAaI/I6JBK0YwBVNW6x.";
+  aliceHashFile = pkgs.writeText "alice-password-hash" aliceHash;
 in
 pkgs.testers.runNixOSTest {
   name = "unit/users";
@@ -20,7 +22,7 @@ pkgs.testers.runNixOSTest {
             alice = {
               wheel = true;
               passwordlessSudo = true;
-              initialPassword = "alice-start";
+              passwordHashFile = "${aliceHashFile}";
               ssh.authorizedKeys = [
                 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPzZm9OdiwdnERpkPbcL2cLo8BX0OL+JMdTHTeyfLV/G alice@test"
               ];

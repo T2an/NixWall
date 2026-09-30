@@ -61,11 +61,19 @@ pub async fn apply_config(State(ctx): State<AppState>, Json(body): Json<ApplyBod
         );
     }
 
-    let target = detect_attr(&ctx.cfg, body.attr.as_deref());
+    queue_apply(
+        &ctx,
+        mode,
+        body.attr.as_deref(),
+        body.extra_args.unwrap_or_default(),
+    )
+}
+
+pub fn queue_apply(ctx: &AppState, mode: &str, attr: Option<&str>, extra: Vec<String>) -> Response {
+    let target = detect_attr(&ctx.cfg, attr);
     let job_id = Uuid::new_v4().simple().to_string()[..10].to_owned();
     let unit = format!("nixwall-apply-{job_id}.service");
     let flake_target = format!("{}#{}", ctx.cfg.flake, target);
-    let extra: Vec<String> = body.extra_args.unwrap_or_default();
 
     let mut cmd_owned: Vec<String> = vec![
         ctx.cfg.sdr_bin.clone(),
@@ -79,7 +87,7 @@ pub async fn apply_config(State(ctx): State<AppState>, Json(body): Json<ApplyBod
         "--property".into(),
         "Wants=network-online.target".into(),
         ctx.cfg.nxr_bin.clone(),
-        mode.clone(),
+        mode.to_owned(),
         "--flake".into(),
         flake_target,
         "-L".into(),

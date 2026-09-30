@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tokio::sync::RwLock;
 
@@ -11,6 +11,7 @@ pub struct AppCtx {
     pub cfg: Config,
     pub ticket_secret: Vec<u8>,
     pub tokens: TokenStore,
+    pub secrets_yaml_lock: Arc<Mutex<()>>,
 }
 
 pub type AppState = Arc<AppCtx>;

@@ -63,6 +63,8 @@ in
         systemd
         nix
         nixos-rebuild
+        mkpasswd
+        sops
       ];
       serviceConfig = {
         Type = "simple";
@@ -79,6 +81,8 @@ in
           "NW_CONFIG_PATH=/etc/nixos/config.toml"
           "NW_REPO_DIR=/etc/nixos"
           "NW_FLAKE=/etc/nixos"
+          "NW_SECRETS_YAML_PATH=/etc/nixos/secrets.yaml"
+          "SOPS_AGE_KEY_FILE=/var/lib/nixwall/sops-age-key.txt"
           "NW_API_TLS_CERT=${config.nixwall.appliance.tls.certFile}"
           "NW_API_TLS_KEY=${config.nixwall.appliance.tls.keyFile}"
           "NW_PAM_SERVICE=${config.nixwall.appliance.auth.pamService}"

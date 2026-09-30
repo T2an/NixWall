@@ -9,6 +9,7 @@ use crate::handlers::apply::{apply_config, apply_logs, apply_status};
 use crate::handlers::config_file::{get_config, put_config};
 use crate::handlers::git::{git_commit, git_push};
 use crate::handlers::interfaces::list_interfaces;
+use crate::handlers::users::change_password;
 use crate::state::AppState;
 
 pub fn build_router(ctx: AppState) -> Router {
@@ -20,6 +21,7 @@ pub fn build_router(ctx: AppState) -> Router {
         .route("/config", get(get_config).put(put_config))
         .route("/git/commit", post(git_commit))
         .route("/git/push", post(git_push))
+        .route("/users/{name}/password", post(change_password))
         .route("/apply", post(apply_config))
         .route("/apply/{job_id}", get(apply_status))
         .route("/apply/{job_id}/logs", get(apply_logs))

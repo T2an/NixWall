@@ -11,8 +11,8 @@ let
     u:
     if u ? passwordHash then
       { hashedPassword = u.passwordHash; }
-    else if u ? initialPassword then
-      { inherit (u) initialPassword; }
+    else if u ? passwordHashFile then
+      { hashedPasswordFile = u.passwordHashFile; }
     else
       { hashedPassword = "!"; };
 
@@ -64,14 +64,22 @@ in
   config = lib.mkIf (config.nixwall.enable && usersCfg != { }) {
     assertions = [
       {
-        assertion = !((rootCfg ? initialPassword) && (rootCfg ? passwordHash));
-        message = "nixwall: [users.root] cannot set both initialPassword and passwordHash.";
+        assertion = !(rootCfg ? initialPassword);
+        message = "nixwall: [users.root] initialPassword is no longer supported (world-readable in the Nix store) — set passwordHash or passwordHashFile instead.";
       }
       {
-        assertion = lib.all (u: !((u ? initialPassword) && (u ? passwordHash))) (
+        assertion = lib.all (u: !(u ? initialPassword)) (lib.attrValues normalUsers);
+        message = "nixwall: initialPassword is no longer supported (world-readable in the Nix store) — set passwordHash or passwordHashFile instead.";
+      }
+      {
+        assertion = !((rootCfg ? passwordHash) && (rootCfg ? passwordHashFile));
+        message = "nixwall: [users.root] cannot set both passwordHash and passwordHashFile.";
+      }
+      {
+        assertion = lib.all (u: !((u ? passwordHash) && (u ? passwordHashFile))) (
           lib.attrValues normalUsers
         );
-        message = "nixwall: a user cannot set both initialPassword and passwordHash.";
+        message = "nixwall: a user cannot set both passwordHash and passwordHashFile.";
       }
       {
         assertion = !(rootCfg ? wheel);
@@ -83,13 +91,15 @@ in
       }
     ];
 
-    users.groups = groupsAttrset;
-
-    users.users =
-      lib.mapAttrs normalAttrs normalUsers
-      // lib.optionalAttrs hasRoot {
-        root = rootAttrs;
-      };
+    users = {
+      mutableUsers = false;
+      groups = groupsAttrset;
+      users =
+        lib.mapAttrs normalAttrs normalUsers
+        // lib.optionalAttrs hasRoot {
+          root = rootAttrs;
+        };
+    };
 
     security.sudo = {
       enable = lib.mkDefault true;

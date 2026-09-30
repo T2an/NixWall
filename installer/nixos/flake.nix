@@ -12,6 +12,10 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -20,6 +24,7 @@
       nixpkgs,
       nixwall,
       disko,
+      sops-nix,
       ...
     }@inputs:
     {
@@ -30,6 +35,7 @@
         modules = [
           disko.nixosModules.disko
           nixwall.nixosModules.nixwall
+          sops-nix.nixosModules.sops
           ./disko.nix
           ./configuration.nix
           {

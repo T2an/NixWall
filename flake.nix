@@ -12,6 +12,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     crane.url = "github:ipetkov/crane";
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -21,6 +25,7 @@
       pre-commit-hooks,
       crane,
       disko,
+      sops-nix,
       ...
     }:
     let
@@ -33,6 +38,7 @@
       flakeSources = [
         nixpkgs
         disko
+        sops-nix
         self
         crane
         pre-commit-hooks
@@ -78,7 +84,10 @@
               excludes = [ ".envrc" ];
             };
             rustfmt.enable = true;
-            prettier.enable = true;
+            prettier = {
+              enable = true;
+              excludes = [ "(^|/)secrets(\\.example)?\\.yaml$" ];
+            };
             markdownlint.enable = true;
             typos.enable = true;
             check-json.enable = true;
@@ -110,6 +119,7 @@
           modules = [
             disko.nixosModules.disko
             self.nixosModules.nixwall
+            sops-nix.nixosModules.sops
             ./installer/nixos/disko.nix
             ./installer/nixos/configuration.nix
             { system.extraDependencies = flakeSources; }
@@ -213,7 +223,7 @@
           crane' = craneLib system;
           artifacts = cargoArtifacts system;
           unit = path: import path { inherit pkgs; };
-          integration = path: import path { inherit pkgs; };
+          integration = path: import path { inherit pkgs sops-nix; };
         in
         {
           pre-commit = preCommitConfig system;
@@ -244,6 +254,7 @@
           "integration/firewall-rules" = integration ./tests/test-scripts/integration/firewall-rules.nix;
           "integration/dns-server" = integration ./tests/test-scripts/integration/dns-server.nix;
           "integration/api" = integration ./tests/test-scripts/integration/api.nix;
+          "integration/password-change" = integration ./tests/test-scripts/integration/password-change.nix;
         }
       );
     };

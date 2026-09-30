@@ -62,7 +62,6 @@ in
         git
         systemd
         nix
-        nixos-rebuild
         mkpasswd
         sops
       ];
@@ -86,6 +85,7 @@ in
           "NW_API_TLS_CERT=${config.nixwall.appliance.tls.certFile}"
           "NW_API_TLS_KEY=${config.nixwall.appliance.tls.keyFile}"
           "NW_PAM_SERVICE=${config.nixwall.appliance.auth.pamService}"
+          "NW_NIXOS_REBUILD_BIN=${config.system.build.nixos-rebuild}/bin/nixos-rebuild"
         ];
         ExecStart = "${cfg.package}/bin/nixwall-api";
       };

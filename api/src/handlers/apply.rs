@@ -81,17 +81,31 @@ pub fn queue_apply(ctx: &AppState, mode: &str, attr: Option<&str>, extra: Vec<St
         unit.clone(),
         "--description".into(),
         "NixWall apply via API".into(),
-        "--collect".into(),
         "--property".into(),
         "After=network-online.target".into(),
         "--property".into(),
         "Wants=network-online.target".into(),
+    ];
+    // systemd-run's transient unit does not inherit nixwall-api's own PATH --
+    // it gets systemd's bare default one. nixos-rebuild-ng shells out to
+    // plain command names (e.g. "test") internally, which then fail to
+    // resolve under that default PATH even though nxr_bin itself is an
+    // absolute path and starts fine.
+    if let Ok(path) = std::env::var("PATH") {
+        cmd_owned.push("--setenv".into());
+        cmd_owned.push(format!("PATH={path}"));
+    }
+    cmd_owned.extend([
         ctx.cfg.nxr_bin.clone(),
         mode.to_owned(),
         "--flake".into(),
         flake_target,
         "-L".into(),
-    ];
+        // The appliance is offline by default and /etc/nixos's flake.lock is
+        // fully pinned at install time; nix would otherwise try to refresh
+        // it (needing git and network access) on every apply.
+        "--no-update-lock-file".into(),
+    ]);
     cmd_owned.extend(extra);
 
     let cmd_refs: Vec<&str> = cmd_owned.iter().map(|s| s.as_str()).collect();
@@ -128,6 +142,8 @@ fn unit_status(cfg: &Config, unit: &str) -> Option<Value> {
             "show",
             unit,
             "-p",
+            "LoadState",
+            "-p",
             "ActiveState",
             "-p",
             "SubState",
@@ -153,6 +169,13 @@ fn unit_status(cfg: &Config, unit: &str) -> Option<Value> {
             };
             map.insert(k.to_owned(), val);
         }
+    }
+    // systemd-run's --collect unloads the transient unit shortly after it
+    // finishes; querying it after that point returns blank/default property
+    // values (ActiveState=inactive, ExecMainStatus=0) that look like a quiet
+    // success even when the job actually failed, so treat "gone" as unknown.
+    if map.get("LoadState").and_then(Value::as_str) == Some("not-found") {
+        return None;
     }
     Some(Value::Object(map))
 }

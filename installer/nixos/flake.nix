@@ -5,8 +5,11 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     nixwall = {
       url = "github:MattiasKockum/NixWall";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.disko.follows = "disko";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        disko.follows = "disko";
+        sops-nix.follows = "sops-nix";
+      };
     };
     disko = {
       url = "github:nix-community/disko";

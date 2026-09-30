@@ -20,6 +20,7 @@ let
         inputs = outerLock.nodes.root.inputs // {
           nixpkgs = [ "nixpkgs" ];
           disko = [ "disko" ];
+          sops-nix = [ "sops-nix" ];
         };
         locked = {
           type = "github";

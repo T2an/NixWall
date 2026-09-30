@@ -43,6 +43,7 @@
               nixpkgs
               disko
               nixwall
+              sops-nix
               nixwall.inputs.crane
               nixwall.inputs.pre-commit-hooks
               nixwall.inputs.pre-commit-hooks.inputs.flake-compat

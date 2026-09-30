@@ -28,6 +28,11 @@ pkgs.testers.runNixOSTest {
     start_all()
     nixwall.wait_for_unit("multi-user.target")
     dns.wait_for_unit("multi-user.target")
+    # wait_for_unit only guarantees the systemd unit started, not that
+    # CoreDNS's UDP listener is actually accepting queries yet (Go runtime
+    # init + plugin chain setup takes a moment) -- without this the dig
+    # calls below are flaky, racing that startup.
+    dns.wait_for_open_port(53, "udp")
 
     nixwall.succeed("resolvectl dns | grep 10.100.100.101")
 
